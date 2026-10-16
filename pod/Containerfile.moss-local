@@ -1,0 +1,38 @@
+# MOSS-TTS-Local-Transformer (PyTorch) backend — GPU-oriented (bf16).
+# Base image ships torch 2.12 + ROCm libs.
+#
+# NOTE: this is a SEPARATE image from Containerfile.moss (Nano). The Local
+# model's remote code targets transformers 5.x (MODALITY_TO_BASE_CLASS_MAPPING
+# in processing_utils), which is INCOMPATIBLE with the 4.x pin Nano needs.
+# Keeping them in separate images avoids the version conflict.
+FROM docker.io/rocm/pytorch:rocm7.14.1_ubuntu24.04_py3.12_pytorch_release_2.12.0
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        ffmpeg \
+    && rm -rf /var/lib/apt/lists/*
+
+# MOSS-TTS-Local uses transformers 5.x remote code + the FULL MOSS-Audio-Tokenizer
+# codec. sentencepiece is required by the text tokenizer.
+RUN pip install --no-cache-dir \
+        "transformers==5.0.0" \
+        "sentencepiece" \
+        "soundfile" \
+        "torchaudio" \
+        "fastapi" \
+        "uvicorn[standard]"
+
+# Generic OpenAI TTS backbone + this backend (same pattern as piper/kokoro/etc).
+COPY shared/openai_tts_server.py      /app/openai_tts_server.py
+COPY pod/moss_local_tts.py         /app/moss_local_tts.py
+
+ENV HOST=0.0.0.0 \
+    PORT=8097 \
+    MOSS_LOCAL_MODEL=/models/OpenMOSS-Team/MOSS-TTS-Local-Transformer \
+    MOSS_LOCAL_CODEC=/models/OpenMOSS-Team/MOSS-Audio-Tokenizer \
+    MOSS_LOCAL_DEVICE=auto
+
+# Default out-of-the-box behavior: serve the OpenAI-compatible API (:8097) so
+# tts-ui can connect unchanged. Weights are bind-mounted at runtime from the host
+# safetensors snapshot:
+#   -m ${MODELS_DIR}/OpenMOSS-Team/MOSS-TTS-Local-Transformer
+CMD ["python", "/app/moss_local_tts.py"]

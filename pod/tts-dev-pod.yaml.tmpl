@@ -1,0 +1,543 @@
+# TTS dev stack — single pod, all backends + UI share one network namespace.
+# This is a TEMPLATE. Variables like ${TTS_APP_DIR} are replaced by start_pod.py
+# using values from .env.
+#
+# Each backend container is tagged with `tts.backend: "true"` and a DISTINCT
+# containerPort (they share the pod netns, so no two may bind the same port).
+# The helper `start_pod.py` parses this file, auto-detects the backends, builds
+# the TTS_BACKENDS JSON for the UI, and pipes the manifest to `podman kube play -`.
+#
+# Adding a backend = add one container block here (distinct port + the label).
+# The UI wiring is automatic — no hand-editing the UI config.
+#
+# Host ports (outside the pod range 8094-8099): 18095-18099 backends, 18100 UI.
+apiVersion: v1
+kind: Pod
+metadata:
+  name: tts-dev
+  labels:
+    app: tts-dev
+spec:
+  # ROCm/HSA needs host IPC for shared-memory allocation (AGENTS.md: --ipc=host ALWAYS).
+  hostIPC: true
+  containers:
+    # ── Backends (tagged tts.backend: "true") ──────────────────────────────
+    - name: piper
+      image: localhost/piper-tts:latest
+      labels:
+        tts.backend: "true"
+      ports:
+        - containerPort: 8095
+          hostPort: 18095
+      env:
+        - name: HOST
+          value: "0.0.0.0"
+        - name: PORT
+          value: "8095"
+        - name: PIPER_VOICES_DIR
+          value: /piper/voices
+      command: ["/bin/sh", "-c"]
+      args:
+        - "pip install -q soundfile && python /app/piper_tts.py"
+      volumeMounts:
+        - name: piper-voices
+          mountPath: /piper/voices
+        - name: piper-code
+          mountPath: /app/piper_tts.py
+          subPath: piper_tts.py
+        - name: backbone-code
+          mountPath: /app/openai_tts_server.py
+          subPath: openai_tts_server.py
+
+    - name: supertonic
+      image: localhost/supertonic-tts:latest
+      labels:
+        tts.backend: "true"
+      ports:
+        - containerPort: 8096
+          hostPort: 18099
+      env:
+        - name: HOST
+          value: "0.0.0.0"
+        - name: PORT
+          value: "8096"
+        - name: SUPERTONIC_STEPS
+          value: "12"
+      command: ["python", "/app/supertonic_tts.py"]
+      volumeMounts:
+        - name: supertonic-code
+          mountPath: /app/supertonic_tts.py
+          subPath: supertonic_tts.py
+        - name: backbone-code
+          mountPath: /app/openai_tts_server.py
+          subPath: openai_tts_server.py
+        - name: supertonic-model-cache
+          mountPath: /root/.cache/supertonic3
+
+    - name: cutetts
+      image: localhost/tts-cutetts:latest
+      labels:
+        tts.backend: "true"
+      ports:
+        - containerPort: 8097
+          hostPort: 18098
+      env:
+        - name: HOST
+          value: "0.0.0.0"
+        - name: PORT
+          value: "8097"
+        - name: CUTETTS_MODEL_DIR
+          value: /models/CuteTTS
+        - name: CUTETTS_DEVICE
+          value: cpu
+      command: ["python", "cutetts_tts.py"]
+      volumeMounts:
+        - name: cutetts-weights
+          mountPath: /models/CuteTTS
+
+    - name: kokoro
+      image: localhost/tts-kokoro:latest
+      labels:
+        tts.backend: "true"
+      ports:
+        - containerPort: 8098
+          hostPort: 18097
+      env:
+        - name: HOST
+          value: "0.0.0.0"
+        - name: PORT
+          value: "8098"
+        - name: KOKORO_MODEL_PATH
+          value: /models/kokoro/kokoro-v1.0.int8.onnx
+        - name: KOKORO_VOICES_PATH
+          value: /models/kokoro/voices-v1.0.bin
+        - name: OMP_NUM_THREADS
+          value: "16"
+      command: ["python", "kokoro_tts.py"]
+      volumeMounts:
+        - name: kokoro-weights
+          mountPath: /models/kokoro
+
+    # - name: audio8
+    #   image: localhost/tts-audio8:dev
+    #   labels:
+    #     tts.backend: "true"
+    #     tts.format: "wav"
+    #     tts.send_model: "false"
+    #   ports:
+    #     - containerPort: 8024
+    #       hostPort: 18096
+    #   env:
+    #     - name: HOST
+    #       value: "0.0.0.0"
+    #     - name: PORT
+    #       value: "8024"
+    #     - name: ARKTTS_MODEL_DIR
+    #       value: /model
+    #     - name: ARKTTS_VOICES_DIR
+    #       value: /voices
+    #     - name: ARKTTS_REGISTRATION_DIR
+    #       value: /model/registration
+    #     - name: ARKTTS_PRECISION
+    #       value: int8
+    #     - name: ARKTTS_CODEC_PRECISION
+    #       value: fp16
+    #     - name: ARKTTS_THREADS
+    #       value: "5"
+    #   command: ["/bin/bash", "-c"]
+    #   args:
+    #     - "python /app/scripts/register_default_voice.py --model-dir /model --voices-dir /voices --name default --overwrite && exec python -m uvicorn arktts_runtime.service:app --app-dir /app --host 0.0.0.0 --port 8024"
+    #   volumeMounts:
+    #     - name: audio8-model
+    #       mountPath: /model
+    #     - name: audio8-voices
+    #       mountPath: /voices
+    #
+    # - name: audio8-0.6b
+    #   image: localhost/tts-audio8-0.6b:dev
+    #   labels:
+    #     tts.backend: "true"
+    #     tts.format: "wav"
+    #     tts.send_model: "false"
+    #   ports:
+    #     - containerPort: 8025
+    #       hostPort: 18101
+    #   env:
+    #     - name: HOST
+    #       value: "0.0.0.0"
+    #     - name: PORT
+    #       value: "8025"
+    #     - name: ARKTTS_MODEL_DIR
+    #       value: /model
+    #     - name: ARKTTS_VOICES_DIR
+    #       value: /voices
+    #     - name: ARKTTS_REGISTRATION_DIR
+    #       value: /model/registration
+    #     - name: ARKTTS_PRECISION
+    #       value: int4
+    #     - name: ARKTTS_CODEC_PRECISION
+    #       value: fp16
+    #     - name: ARKTTS_THREADS
+    #       value: "5"
+    #   command: ["/bin/bash", "-c"]
+    #   args:
+    #     - "python /app/scripts/register_voice.py --model-dir /model --voices-dir /voices --audio /ref/sample.mp3 --text 'The quick brown fox jumps over the lazy dog, while the sun sets behind the distant hills. The morning sun rose over the quiet valley, and the birds began to sing in the tall trees.' --name default --overwrite && exec python -m uvicorn arktts_runtime.service:app --app-dir /app --host 0.0.0.0 --port 8025"
+    #   volumeMounts:
+    #     - name: audio8-0.6b-model
+    #       mountPath: /model
+    #     - name: audio8-0.6b-voices
+    #       mountPath: /voices
+    #     - name: tts-refs
+    #       mountPath: /ref
+    #
+    # - name: breeze
+    #   image: localhost/tts-breeze:latest
+    #   labels:
+    #     tts.backend: "true"
+    #     tts.instructions: "true"
+    #   ports:
+    #     - containerPort: 8090
+    #       hostPort: 18090
+    #   env:
+    #     - name: HOST
+    #       value: "0.0.0.0"
+    #     - name: PORT
+    #       value: "8090"
+    #     - name: BREEZE_TTS_MODEL
+    #       value: /models/BreezeBlue/Breeze-TTS-2
+    #     - name: BREEZE_TTS_REF_AUDIO
+    #       value: /app/ref.wav
+    #     - name: BREEZE_TTS_LANG
+    #       value: auto
+    #     # Restrict torch to the eGPU (detected by largest total VRAM, never a
+    #     # hardcoded index). Set in openai_tts_server.auto_restrict_to_egpu().
+    #     - name: TTS_AUTO_EGPU
+    #       value: "1"
+    #     # Lazy-load the GPU model on first request and evict after idle TTL.
+    #     - name: TTS_LAZY_TTL
+    #       value: "300"
+    #   command: ["python", "/app/breeze_tts.py"]
+    #   volumeMounts:
+    #     - name: breeze-model
+    #       mountPath: /models/BreezeBlue/Breeze-TTS-2
+    #     - name: breeze-ref
+    #       mountPath: /app/ref.wav
+    #     - name: breeze-code
+    #       mountPath: /app/breeze_tts.py
+    #       subPath: breeze_tts.py
+    #     - name: backbone-code
+    #       mountPath: /app/openai_tts_server.py
+    #       subPath: openai_tts_server.py
+    #     - name: kfd-device
+    #       mountPath: /dev/kfd
+    #     - name: dri-device
+    #       mountPath: /dev/dri
+    #
+    # - name: moss
+    #   image: localhost/moss-tts:latest
+    #   labels:
+    #     tts.backend: "true"
+    #   ports:
+    #     - containerPort: 8092
+    #       hostPort: 18092
+    #   env:
+    #     - name: HOST
+    #       value: "0.0.0.0"
+    #     - name: PORT
+    #       value: "8092"
+    #     - name: MOSS_TTS_MODEL
+    #       value: /models/OpenMOSS-Team/MOSS-TTS-Nano
+    #     - name: MOSS_TTS_CODEC
+    #       value: /models/OpenMOSS-Team/MOSS-Audio-Tokenizer-Nano
+    #     - name: MOSS_TTS_DEVICE
+    #       value: auto
+    #     # Restrict torch to the eGPU (detected by largest total VRAM, never a
+    #     # hardcoded index). Set in openai_tts_server.auto_restrict_to_egpu().
+    #     - name: TTS_AUTO_EGPU
+    #       value: "1"
+    #     # Lazy-load the GPU model on first request and evict after idle TTL.
+    #     - name: TTS_LAZY_TTL
+    #       value: "300"
+    #   command: ["python", "/app/moss_tts.py"]
+    #   volumeMounts:
+    #     - name: moss-model
+    #       mountPath: /models/OpenMOSS-Team/MOSS-TTS-Nano
+    #     - name: moss-codec
+    #       mountPath: /models/OpenMOSS-Team/MOSS-Audio-Tokenizer-Nano
+    #     - name: moss-code
+    #       mountPath: /app/moss_tts.py
+    #       subPath: moss_tts.py
+    #     - name: backbone-code
+    #       mountPath: /app/openai_tts_server.py
+    #       subPath: openai_tts_server.py
+    #     - name: kfd-device
+    #       mountPath: /dev/kfd
+    #     - name: dri-device
+    #       mountPath: /dev/dri
+    #
+    # - name: moss-local
+    #   image: localhost/moss-tts-local:latest
+    #   labels:
+    #     tts.backend: "true"
+    #     tts.instructions: "false"
+    #   ports:
+    #     - containerPort: 8091
+    #       hostPort: 18091
+    #   env:
+    #     - name: HOST
+    #       value: "0.0.0.0"
+    #     - name: PORT
+    #       value: "8091"
+    #     - name: MOSS_LOCAL_MODEL
+    #       value: /models/OpenMOSS-Team/MOSS-TTS-Local-Transformer
+    #     - name: MOSS_LOCAL_CODEC
+    #       value: /models/OpenMOSS-Team/MOSS-Audio-Tokenizer
+    #     - name: MOSS_LOCAL_DEVICE
+    #       value: auto
+    #     # Restrict torch to the eGPU (detected by largest total VRAM, never a
+    #     # hardcoded index). Set in openai_tts_server.auto_restrict_to_egpu().
+    #     - name: TTS_AUTO_EGPU
+    #       value: "1"
+    #     # Lazy-load the GPU model on first request and evict after idle TTL.
+    #     - name: TTS_LAZY_TTL
+    #       value: "300"
+    #   command: ["python", "/app/moss_local_tts.py"]
+    #   volumeMounts:
+    #     - name: moss-local-model
+    #       mountPath: /models/OpenMOSS-Team/MOSS-TTS-Local-Transformer
+    #     - name: moss-local-codec
+    #       mountPath: /models/OpenMOSS-Team/MOSS-Audio-Tokenizer
+    #     - name: moss-local-code
+    #       mountPath: /app/moss_local_tts.py
+    #       subPath: moss_local_tts.py
+    #     - name: backbone-code
+    #       mountPath: /app/openai_tts_server.py
+    #       subPath: openai_tts_server.py
+    #     - name: kfd-device
+    #       mountPath: /dev/kfd
+    #     - name: dri-device
+    #       mountPath: /dev/dri
+    #
+    # # GPU backends re-enabled (2026-09-08): qwen-tts / qwen-tts-base now
+    # # lazy-load on first request and evict after TTS_LAZY_TTL idle seconds,
+    # # so they no longer hold VRAM at startup. See AGENTS.md "Model Swap
+    # # Safety" for GPU-load guidance.
+    # - name: qwen-tts
+    #   image: localhost/qwen-torch-tts:latest
+    #   labels:
+    #     tts.backend: "true"
+    #     tts.instructions: "true"
+    #   ports:
+    #     - containerPort: 8094
+    #       hostPort: 18094
+    #   env:
+    #     - name: HOST
+    #       value: "0.0.0.0"
+    #     - name: PORT
+    #       value: "8094"
+    #     - name: QWEN_TTS_MODEL
+    #       value: /models/Qwen/Qwen3-TTS-12Hz-1.7B-VoiceDesign
+    #     - name: QWEN_TTS_REF_AUDIO
+    #       value: /app/ref.wav
+    #     - name: QWEN_TTS_LANG
+    #       value: auto
+    #     # Restrict torch to the eGPU (detected by largest total VRAM, never a
+    #     # hardcoded index). Set in openai_tts_server.auto_restrict_to_egpu().
+    #     - name: TTS_AUTO_EGPU
+    #       value: "1"
+    #     # Lazy-load the GPU model on first request and evict after idle TTL.
+    #     - name: TTS_LAZY_TTL
+    #       value: "300"
+    #   command: ["python", "/app/qwen_torch_tts.py"]
+    #   volumeMounts:
+    #     - name: qwen-tts-model
+    #       mountPath: /models/Qwen/Qwen3-TTS-12Hz-1.7B-VoiceDesign
+    #     - name: qwen-tts-ref
+    #       mountPath: /app/ref.wav
+    #     - name: qwen-tts-code
+    #       mountPath: /app/qwen_torch_tts.py
+    #       subPath: qwen_torch_tts.py
+    #     - name: backbone-code
+    #       mountPath: /app/openai_tts_server.py
+    #       subPath: openai_tts_server.py
+    #     - name: kfd-device
+    #       mountPath: /dev/kfd
+    #     - name: dri-device
+    #       mountPath: /dev/dri
+    #
+    # - name: qwen-tts-base
+    #   image: localhost/qwen-torch-tts:latest
+    #   labels:
+    #     tts.backend: "true"
+    #     tts.instructions: "false"
+    #   ports:
+    #     - containerPort: 8093
+    #       hostPort: 18093
+    #   env:
+    #     - name: HOST
+    #       value: "0.0.0.0"
+    #     - name: PORT
+    #       value: "8093"
+    #     - name: QWEN_TTS_MODEL
+    #       value: /models/Qwen/Qwen3-TTS-12Hz-0.6B-Base
+    #     - name: QWEN_TTS_REF_AUDIO
+    #       value: /app/ref.mp3
+    #     - name: QWEN_TTS_LANG
+    #       value: auto
+    #     # Restrict torch to the eGPU (detected by largest total VRAM, never a
+    #     # hardcoded index). Set in openai_tts_server.auto_restrict_to_egpu().
+    #     - name: TTS_AUTO_EGPU
+    #       value: "1"
+    #     # Lazy-load the GPU model on first request and evict after idle TTL.
+    #     - name: TTS_LAZY_TTL
+    #       value: "300"
+    #   command: ["python", "/app/qwen_torch_tts.py"]
+    #   volumeMounts:
+    #     - name: qwen-tts-base-model
+    #       mountPath: /models/Qwen/Qwen3-TTS-12Hz-0.6B-Base
+    #     - name: qwen-tts-base-ref
+    #       mountPath: /app/ref.mp3
+    #     - name: qwen-tts-code
+    #       mountPath: /app/qwen_torch_tts.py
+    #       subPath: qwen_torch_tts.py
+    #     - name: backbone-code
+    #       mountPath: /app/openai_tts_server.py
+    #       subPath: openai_tts_server.py
+    #     - name: kfd-device
+    #       mountPath: /dev/kfd
+    #     - name: dri-device
+    #       mountPath: /dev/dri
+
+
+    # ── UI (not a backend; TTS_BACKENDS injected by start_pod.py) ────────────
+    - name: ui
+      image: localhost/tts-ui:dev
+      ports:
+        - containerPort: 8099
+          hostPort: 18100
+      env:
+        - name: PORT
+          value: "8099"
+        # TTS_BACKENDS is injected by start_pod.py from the backend labels/ports.
+        - name: TTS_BACKENDS
+          value: "[]"
+      command: ["python3", "-u", "server.py"]
+      volumeMounts:
+        - name: tts-ui-code
+          mountPath: /app
+
+  volumes:
+    - name: tts-ui-code
+      hostPath:
+        path: ${TTS_APP_DIR}/tts-ui
+        type: Directory
+    - name: piper-voices
+      hostPath:
+        path: ${PIPER_VOICES_DIR}
+        type: Directory
+    - name: piper-code
+      hostPath:
+        path: ${TTS_APP_DIR}/unified
+        type: Directory
+    - name: supertonic-code
+      hostPath:
+        path: ${TTS_APP_DIR}/unified
+        type: Directory
+    - name: supertonic-model-cache
+      hostPath:
+        path: ${SUPER_TONIC_CACHE_DIR}
+        type: Directory
+    - name: backbone-code
+      hostPath:
+        path: ${TTS_APP_DIR}/shared
+        type: Directory
+    - name: cutetts-weights
+      hostPath:
+        path: ${MODELS_DIR}/OPPOer/CuteTTS
+        type: Directory
+    - name: kokoro-weights
+      hostPath:
+        path: ${MODELS_DIR}/hexgrad/Kokoro-82M
+        type: Directory
+    - name: audio8-model
+      hostPath:
+        path: ${MODELS_DIR}/Audio8/audio8-TTS-0.1B-ONNX-INT8
+        type: Directory
+    - name: audio8-voices
+      hostPath:
+        path: ${MODELS_DIR}/Audio8/voices
+        type: Directory
+    - name: audio8-0.6b-model
+      hostPath:
+        path: ${MODELS_DIR}/Audio8/audio8-TTS-0.6B-ONNX-INT4
+        type: Directory
+    - name: audio8-0.6b-voices
+      hostPath:
+        path: ${MODELS_DIR}/Audio8/voices-0.6b
+        type: Directory
+    - name: tts-refs
+      hostPath:
+        path: ${REFS_DIR}
+        type: Directory
+    - name: moss-model
+      hostPath:
+        path: ${MODELS_DIR}/OpenMOSS-Team/MOSS-TTS-Nano
+        type: Directory
+    - name: moss-codec
+      hostPath:
+        path: ${MODELS_DIR}/OpenMOSS-Team/MOSS-Audio-Tokenizer-Nano
+        type: Directory
+    - name: moss-code
+      hostPath:
+        path: ${TTS_APP_DIR}
+        type: Directory
+    - name: moss-local-model
+      hostPath:
+        path: ${MODELS_DIR}/OpenMOSS-Team/MOSS-TTS-Local-Transformer
+        type: Directory
+    - name: moss-local-codec
+      hostPath:
+        path: ${MODELS_DIR}/OpenMOSS-Team/MOSS-Audio-Tokenizer
+        type: Directory
+    - name: moss-local-code
+      hostPath:
+        path: ${TTS_APP_DIR}
+        type: Directory
+    - name: qwen-tts-base-model
+      hostPath:
+        path: ${MODELS_DIR}/Qwen/Qwen3-TTS-12Hz-0.6B-Base
+        type: Directory
+    - name: qwen-tts-base-ref
+      hostPath:
+        path: ${REFS_DIR}/sample.mp3
+        type: File
+    - name: qwen-tts-model
+      hostPath:
+        path: ${MODELS_DIR}/Qwen/Qwen3-TTS-12Hz-1.7B-VoiceDesign
+        type: Directory
+    - name: qwen-tts-code
+      hostPath:
+        path: ${TTS_APP_DIR}
+        type: Directory
+    - name: qwen-tts-ref
+      hostPath:
+        path: ${REFS_DIR}/out_english.wav
+        type: File
+    - name: breeze-model
+      hostPath:
+        path: ${MODELS_DIR}/BreezeBlue/Breeze-TTS-2
+        type: Directory
+    - name: breeze-ref
+      hostPath:
+        path: ${REFS_DIR}/out_english.wav
+        type: File
+    - name: breeze-code
+      hostPath:
+        path: ${TTS_APP_DIR}
+        type: Directory
+    - name: kfd-device
+      hostPath:
+        path: /dev/kfd
+    - name: dri-device
+      hostPath:
+        path: /dev/dri

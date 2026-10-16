@@ -1,0 +1,56 @@
+# Breeze TTS 2 container — ROCm + sdpa (or eager on CPU)
+#
+# Breeze TTS 2: Qwen3 backbone (1B) + depth decoder (100M) + T5Gemma2 text encoder
+# + Mimi codec. VRAM ~7.7 GiB sdpa.
+#
+# flash_attention_2 is NOT installed under ROCm — resolve_attn_implementation()
+# falls back to "sdpa" on CUDA, "eager" on CPU.
+# CUDA Graph fast path (--fast-all) is disabled.
+#
+# License: BreezeBlue Research and Non-Commercial (weights only).
+# Code: Apache-2.0 (breeze-tts package).
+
+# Base image ships torch 2.12 + ROCm libs (same as moss/qwen-torch backends).
+FROM docker.io/rocm/pytorch:rocm7.14.1_ubuntu24.04_py3.12_pytorch_release_2.12.0
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        sox ffmpeg \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install Python dependencies
+# transformers 4.57.3 (required by breeze-tts)
+# qwen-tts 0.1.1 (for Qwen3TTSTokenizer / audio tokenizer)
+RUN pip install --no-cache-dir \
+        "transformers==4.57.3" \
+        "accelerate>=1.0" \
+        "qwen-tts==0.1.1" \
+        "soundfile>=0.13" \
+        "fastapi>=0.115" \
+        "uvicorn>=0.30" \
+        "python-multipart>=0.0.18"
+
+# Clone breeze-tts source (contains breeze_infer + models packages).
+# It's a source checkout (no setup.py/pyproject.toml) — not pip-installable.
+# The backend imports breeze_infer.* and models.* as top-level modules, so the
+# repo root must be on PYTHONPATH.
+RUN git clone --depth 1 https://github.com/breezeblue-ai/breeze-tts.git /app/breeze-tts
+
+# Generic OpenAI TTS backbone + this backend
+COPY shared/openai_tts_server.py      /app/openai_tts_server.py
+COPY pod/breeze_tts.py             /app/breeze_tts.py
+
+# Default clone voice (overridable via BREEZE_TTS_REF_AUDIO)
+COPY refs/out_english.wav        /app/ref.wav
+
+ENV HOST=0.0.0.0 \
+    PORT=8097 \
+    PYTHONPATH=/app/breeze-tts \
+    BREEZE_TTS_MODEL=/models/BreezeBlue/Breeze-TTS-2 \
+    BREEZE_TTS_REF_AUDIO=/app/ref.wav \
+    BREEZE_TTS_LANG=auto \
+    TTS_AUTO_EGPU=1 \
+    TTS_LAZY_TTL=300
+
+# Model is bind-mounted at runtime:
+#   podman run -v ${MODELS_DIR}/BreezeBlue/Breeze-TTS-2:/models/BreezeBlue/Breeze-TTS-2
+CMD ["python", "/app/breeze_tts.py"]

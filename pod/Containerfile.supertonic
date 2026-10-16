@@ -1,0 +1,16 @@
+# Supertonic 3 TTS — ONNX Runtime, CPU-first, 31 languages (incl. ru/de).
+# Slim Python base: supertonic is non-autoregressive ONNX, no ROCm/GPU needed.
+FROM docker.io/library/python:3.12-slim
+
+# ffmpeg + libsndfile for mp3/wav encoding; onnxruntime + supertonic SDK + serve extra
+RUN apt-get update && apt-get install -y --no-install-recommends ffmpeg libsndfile1 \
+    && rm -rf /var/lib/apt/lists/*
+RUN pip install --no-cache-dir "supertonic[serve]"
+
+# server entrypoint
+COPY pod/supertonic_openai_server.py /app/supertonic_openai_server.py
+
+WORKDIR /app
+ENV HOST=0.0.0.0 PORT=8097
+
+CMD ["python", "supertonic_openai_server.py"]

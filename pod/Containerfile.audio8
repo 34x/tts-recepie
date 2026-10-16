@@ -1,0 +1,27 @@
+# Audio8 TTS 0.1B ONNX INT8 — CPU container (option 1: built-in server)
+# Runs the model's own FastAPI service (OpenAI-compatible /v1/audio/speech).
+# Model weights are bind-mounted read-only at /model; voices at /voices.
+FROM python:3.12-slim
+
+WORKDIR /app
+
+# Copy the standalone ONNX runtime (arktts_runtime package + requirements)
+COPY onnx_runtime_0_1b_int8/arktts_runtime/ /app/arktts_runtime/
+COPY onnx_runtime_0_1b_int8/scripts/ /app/scripts/
+COPY onnx_runtime_0_1b_int8/requirements.txt /app/requirements.txt
+
+RUN pip install --no-cache-dir -r /app/requirements.txt
+
+# Model + voices are bind-mounted at runtime
+ENV ARKTTS_MODEL_DIR=/model \
+    ARKTTS_VOICES_DIR=/voices \
+    ARKTTS_REGISTRATION_DIR=/model/registration \
+    ARKTTS_PRECISION=int8 \
+    ARKTTS_CODEC_PRECISION=fp16 \
+    ARKTTS_THREADS=5 \
+    HOST=0.0.0.0 \
+    PORT=8024
+
+EXPOSE 8024
+
+CMD ["python", "-m", "uvicorn", "arktts_runtime.service:app", "--app-dir", "/app", "--host", "0.0.0.0", "--port", "8024"]

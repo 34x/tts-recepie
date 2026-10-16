@@ -1,0 +1,52 @@
+# Unified TTS Backend + UI container.
+# All three processes are managed by supervisord (auto-restart on crash):
+#   - piper_tts.py       → /v1/audio/speech on 8095
+#   - supertonic_tts.py  → /v1/audio/speech on 8096
+#   - tts-ui/server.py   → static UI + proxy on 8099
+#                         (gated behind wait_health.py until backends respond)
+#
+# Build:  podman build -f unified/Containerfile -t localhost/tts-backend:latest .
+# Run:    podman run -d -p 18110:8099 --name tts-backend ./tts-backend:latest
+# UI:     http://localhost:18110
+
+FROM python:3.12-slim
+
+# System deps: ffmpeg (mp3 encode), libsndfile (wav), espeak-ng (piper fallback)
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        ffmpeg libsndfile1 espeak-ng \
+    && rm -rf /var/lib/apt/lists/*
+
+# uv for fast, deterministic package installs
+RUN pip install --no-cache-dir uv
+
+WORKDIR /app
+
+# --- Dependencies (build-time, deterministic) ---
+COPY unified/pyproject.toml unified/uv.lock ./
+RUN uv sync --frozen
+ENV PATH="/app/.venv/bin:$PATH"
+
+# --- Backend code ---
+COPY shared/openai_tts_server.py   ./
+COPY unified/piper_tts.py          ./
+COPY unified/supertonic_tts.py     ./
+COPY shared/text_cleaner.py        ./
+COPY unified/wait_health.py        ./
+COPY unified/entrypoint-backend.sh ./
+RUN chmod +x ./entrypoint-backend.sh
+
+# --- UI code (served by process 2) ---
+COPY tts-ui/server.py        /app/ui/server.py
+COPY tts-ui/static/          /app/ui/static/
+
+# --- Supervisor config ---
+COPY unified/supervisord.conf /etc/supervisord.conf
+
+# --- Environment ---
+# UI server config
+ENV PORT="8099"
+ENV TTS_BACKENDS='[{"label":"piper","url":"http://127.0.0.1:8095/v1/audio/speech"},{"label":"supertonic","url":"http://127.0.0.1:8096/v1/audio/speech"}]'
+
+EXPOSE 8095 8096 8099
+
+CMD ["/app/entrypoint-backend.sh"]

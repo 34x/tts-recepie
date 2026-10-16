@@ -1,0 +1,33 @@
+FROM python:3.12-slim
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        libsndfile1 \
+        ffmpeg \
+    && rm -rf /var/lib/apt/lists/*
+
+RUN pip install --no-cache-dir \
+        piper-tts==1.6.0 \
+        fastapi==0.115.12 \
+        uvicorn==0.34.2 \
+        langdetect==1.0.9
+
+# Voices live in a volume-mounted directory. Defined in tts-dev-pod.yaml.tmpl
+# (e.g. ${PIPER_VOICES_DIR} -> /piper/voices).
+# This init script only downloads voices that are missing on first start.
+ENV PIPER_VOICES_DIR=/piper/voices
+RUN mkdir -p /piper/voices
+
+COPY pod/entrypoint.sh /app/entrypoint.sh
+COPY pod/piper-tts-server.py /app/server.py
+COPY shared/text_cleaner.py /app/text_cleaner.py
+
+RUN chmod +x /app/entrypoint.sh
+
+WORKDIR /app
+EXPOSE 5050
+
+HEALTHCHECK --interval=30s --timeout=5s --start-period=30s \
+    CMD python3 -c "import urllib.request; urllib.request.urlopen('http://localhost:5050/health')" || exit 1
+
+# Long start-period (60s) because first launch may download voices
+CMD ["/app/entrypoint.sh"]

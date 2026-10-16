@@ -1,0 +1,17 @@
+FROM docker.io/library/python:3.12-slim
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        ffmpeg libsndfile1 espeak-ng \
+    && rm -rf /var/lib/apt/lists/*
+
+RUN pip install --no-cache-dir "kokoro-onnx" "soundfile" "fastapi" "uvicorn" "pydantic" "numpy"
+
+COPY shared/openai_tts_server.py /app/
+COPY pod/kokoro_tts.py /app/
+
+ENV HOST=0.0.0.0 PORT=8095 \
+    KOKORO_MODEL_PATH=/models/kokoro/kokoro-v1.0.int8.onnx \
+    KOKORO_VOICES_PATH=/models/kokoro/voices-v1.0.bin
+
+WORKDIR /app
+CMD ["python", "kokoro_tts.py"]

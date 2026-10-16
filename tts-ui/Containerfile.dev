@@ -1,0 +1,3 @@
+ARG BASE=localhost/tts-ui:latest
+FROM ${BASE}
+# Thin dev wrapper: /app is replaced by a bind mount at runtime (see dev-run.sh).

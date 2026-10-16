@@ -1,0 +1,127 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-content">
+<meta name="theme-color" content="#0d1117">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<link rel="manifest" href="/manifest.json">
+<link rel="icon" type="image/png" sizes="192x192" href="/icons/icon-192.png">
+<link rel="apple-touch-icon" href="/icons/icon-192.png">
+<link rel="stylesheet" href="/style.css">
+<title>TTS</title>
+<!-- Anti-flash: set the resolved theme before first paint (mirrors theme.js). -->
+<script>
+(function () {
+    try {
+        var p = localStorage.getItem('tts-theme') || 'auto';
+        var light = window.matchMedia && window.matchMedia('(prefers-color-scheme: light)').matches;
+        document.documentElement.dataset.theme =
+            p === 'light' ? 'light' : p === 'dark' ? 'dark' : (light ? 'light' : 'dark');
+    } catch (e) { /* private mode / no matchMedia */ }
+})();
+</script>
+</head>
+<body>
+
+<!-- ── Input Mode ─────────────────────────────────────────────── -->
+<div id="mode-input" class="mode active">
+    <header class="topbar">
+        <h1>TTS</h1>
+        <div class="topbar-actions">
+            <button id="library-btn" class="icon-btn with-label" title="Library">
+                <span class="icon-btn-icon"></span><span class="icon-btn-label">Library</span>
+            </button>
+            <button id="theme-btn" class="icon-btn" title="Theme (auto/light/dark)">🌗</button>
+            <button id="settings-btn" class="icon-btn" title="Settings">⚙️</button>
+        </div>
+    </header>
+    <textarea id="text" placeholder="Type or paste text here…" autocomplete="off"></textarea>
+    <footer class="bottombar">
+        <button id="clear" class="btn-secondary" title="Clear">✕</button>
+        <button id="go" class="btn-primary">Speak</button>
+    </footer>
+</div>
+
+<!-- ── Library Mode ──────────────────────────────────────────── -->
+<div id="mode-library" class="mode">
+    <header class="topbar">
+        <button id="library-back-btn" class="icon-btn" title="Back">←</button>
+        <h1>Library</h1>
+        <span id="library-count" class="library-count"></span>
+    </header>
+    <div id="library-body">
+        <div id="library-list"></div>
+        <div id="library-empty" class="library-empty">No saved texts yet.</div>
+    </div>
+</div>
+
+<!-- ── Playing Mode ───────────────────────────────────────────── -->
+<div id="mode-play" class="mode">
+    <header class="topbar">
+        <button id="back-btn" class="icon-btn" title="New text">←</button>
+        <h1 id="play-status" class="title-progress">0c / 0c</h1>
+    </header>
+    <div id="stream-stats" class="stream-stats"></div>
+    <div id="play-body">
+        <div id="seg-wrap">
+            <div class="bar-row"><div class="bar" id="seg-download" title="Downloaded"></div></div>
+            <div class="bar-row"><div class="bar" id="seg-play" title="Playback position"></div></div>
+        </div>
+        <div id="chunk-list"></div>
+    </div>
+    <footer class="bottombar controls-bar">
+        <div class="ctrl-zone ctrl-left">
+            <button id="download-btn" class="icon-btn nav-btn" title="Download MP3">⬇</button>
+        </div>
+        <div class="ctrl-zone ctrl-center">
+            <button id="prev-chunk" class="icon-btn nav-btn" title="Previous chunk">⏮</button>
+            <button id="play-pause" class="icon-btn play-btn" title="Play/Pause">▶️</button>
+            <button id="next-chunk" class="icon-btn nav-btn" title="Next chunk">⏭</button>
+        </div>
+        <div class="ctrl-zone ctrl-right">
+            <button id="speed-btn" class="icon-btn speed-btn" title="Playback speed">1×</button>
+        </div>
+    </footer>
+</div>
+
+<!-- ── Settings Panel (slide-over) ────────────────────────────── -->
+<div id="settings-overlay" class="overlay"></div>
+<aside id="settings-panel" class="panel">
+    <header class="panel-header">
+        <span>Settings</span>
+        <button id="settings-close" class="icon-btn">✕</button>
+    </header>
+    <div class="panel-body">
+        <label class="field-label">Model</label>
+        <select id="model"></select>
+        <div id="backend-info" class="backend-info"></div>
+
+        <label class="field-label">Voice</label>
+        <select id="voice"><option value="">Auto-detect</option></select>
+
+        <label class="field-label" id="instruct-label" style="display:none">Instructions</label>
+        <textarea id="instruct" placeholder="Voice design instructions…" rows="3" style="display:none"></textarea>
+
+        <div class="check-row">
+            <label class="paste-check">
+                <input type="checkbox" id="pasteStream">
+                Stream on paste
+            </label>
+            <label class="paste-check">
+                <input type="checkbox" id="normalizeText">
+                Normalize text before speaking
+            </label>
+        </div>
+    </div>
+</aside>
+
+<!-- ── Shared: audio + error ──────────────────────────────────── -->
+<audio id="player"></audio>
+<div id="err" class="err-bar"></div>
+<pre id="debug-panel" style="display:none"></pre>
+
+<script type="module" src="/app.js"></script>
+</body>
+</html>

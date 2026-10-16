@@ -1,0 +1,23 @@
+[project]
+name = "tts-backend"
+version = "0.1.0"
+description = "Unified TTS backend server (piper + supertonic)"
+requires-python = ">=3.12"
+dependencies = [
+    # --- Shared backbone (openai_tts_server.py) ---
+    "fastapi>=0.115",
+    "uvicorn>=0.34",
+    "pydantic>=2.0",
+    "numpy>=1.26",
+    "soundfile>=0.12",
+
+    # --- Piper backend ---
+    "piper-tts==1.6.0",
+    "langdetect>=1.0.9",
+
+    # --- Supertonic backend ---
+    "supertonic[serve]",
+
+    # --- Process management ---
+    "supervisor>=4.3",
+]

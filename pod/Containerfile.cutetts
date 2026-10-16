@@ -1,0 +1,31 @@
+# CuteTTS — CPU-first backend for the generic OpenAI TTS server.
+# CuteTTS is a Qwen3-backbone TTS (~230M) with a diffusion head. The `cutetts`
+# package is NOT on PyPI — it installs from the OPPO-Mente-Lab/CuteTTS repo and
+# pins torch==2.5.1 / torchaudio==2.5.1 / transformers==4.51.0, so it gets its
+# own image (cannot share the qwen-torch image without downgrading it).
+FROM docker.io/library/python:3.12-slim
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        ffmpeg libsndfile1 git \
+    && rm -rf /var/lib/apt/lists/*
+
+# CPU-only torch 2.5.1 (matching the package pin) to keep the image lean.
+RUN pip install --no-cache-dir \
+        torch==2.5.1 torchaudio==2.5.1 \
+        --index-url https://download.pytorch.org/whl/cpu
+
+# Install the cutetts package from source (editable not needed in image).
+RUN git clone --depth 1 https://github.com/OPPO-Mente-Lab/CuteTTS.git /opt/CuteTTS \
+    && pip install --no-cache-dir -e /opt/CuteTTS
+
+COPY shared/openai_tts_server.py /app/openai_tts_server.py
+COPY pod/cutetts_tts.py /app/cutetts_tts.py
+
+WORKDIR /app
+ENV HOST=0.0.0.0 PORT=8098 \
+    CUTETTS_MODEL_DIR=/models/CuteTTS \
+    CUTETTS_DEVICE=cpu
+
+# Model weights are bind-mounted at runtime from the host snapshot:
+#   -v ${MODELS_DIR}/OPPOer/CuteTTS:/models/CuteTTS
+CMD ["python", "cutetts_tts.py"]

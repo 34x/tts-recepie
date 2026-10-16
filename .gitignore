@@ -1,0 +1,32 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+
+# Node (tts-ui tests/optional tooling)
+node_modules/
+
+# Logs / runtime artifacts
+*.log
+
+# Secrets
+.env
+*.env
+
+# Editor / OS
+.DS_Store
+*.swp
+.idea/
+.vscode/
+
+# Models and Weights
+*.onnx
+*.safetensors
+*.gguf
+out_*.wav
+
+# Project output
+output/
+tts-dev-pod.yaml

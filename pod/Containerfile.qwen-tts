@@ -1,0 +1,32 @@
+# CPU-first Qwen3-TTS (PyTorch) backend — GPU later via device_map/dtype.
+# Base image ships torch 2.12 + ROCm libs; we run on CPU for now.
+FROM docker.io/rocm/pytorch:rocm7.14.1_ubuntu24.04_py3.12_pytorch_release_2.12.0
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        sox ffmpeg \
+    && rm -rf /var/lib/apt/lists/*
+
+# qwen-tts pulls transformers/accelerate/gradio/librosa/torchaudio/soundfile/sox/
+# onnxruntime/einops. libsox (native) is required because qwen_tts imports `sox`
+# at module load for speaker-embedding extraction — without it the container
+# crashes on startup. ffmpeg encodes WAV->MP3 with no leading metadata so tts-ui
+# can concatenate chunk byte-streams into one gapless audio/mpeg track.
+RUN pip install --no-cache-dir "qwen-tts"
+
+# Generic OpenAI TTS backbone + this backend (same pattern as piper/kokoro/etc).
+COPY shared/openai_tts_server.py      /app/openai_tts_server.py
+COPY pod/qwen_torch_tts.py         /app/qwen_torch_tts.py
+# Default clone voice for the Base clone model (overridable via QWEN_TTS_REF_AUDIO).
+COPY refs/out_english.wav        /app/ref.wav
+
+ENV HOST=0.0.0.0 \
+    PORT=8096 \
+    QWEN_TTS_MODEL=/models/Qwen/Qwen3-TTS-12Hz-1.7B-VoiceDesign \
+    QWEN_TTS_REF_AUDIO=/app/ref.wav \
+    QWEN_TTS_LANG=auto
+
+# Default out-of-the-box behavior: serve the OpenAI-compatible API (:8096) so
+# tts-ui can connect unchanged. Weights are bind-mounted at runtime from the host
+# safetensors snapshot (single model.safetensors + config.json after download):
+#   -m ${MODELS_DIR}/Qwen/Qwen3-TTS-12Hz-0.6B-Base
+CMD ["python", "/app/qwen_torch_tts.py"]

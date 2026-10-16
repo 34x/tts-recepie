@@ -1,0 +1,4 @@
+# Reference audio for voice-cloning models — generated locally, not tracked
+*.mp3
+*.wav
+!out_english.wav

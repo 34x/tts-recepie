@@ -1,0 +1,39 @@
+# --- Secrets (never ship the live environment into the build context) ---
+.env
+.env.*
+
+# --- VCS / tooling metadata ---
+.git
+.github
+.gitignore
+
+# --- Rendered, machine-specific manifest (ship only the .tmpl template) ---
+tts-dev-pod.yaml
+
+# --- Generated output & runtime artifacts ---
+output/
+*.log
+
+# --- Caches / virtualenvs / JS deps ---
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+venv/
+node_modules/
+
+# --- Model weights / large binaries (downloaded at runtime, not baked in) ---
+*.onnx
+*.safetensors
+*.gguf
+
+# --- Local reference audio (keep the tracked English sample the Containerfiles COPY) ---
+refs/*.wav
+refs/*.mp3
+!refs/out_english.wav
+
+# --- Editor / OS noise ---
+.DS_Store
+*.swp
+.idea/
+.vscode/

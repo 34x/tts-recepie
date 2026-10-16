@@ -1,0 +1,37 @@
+# MOSS-TTS-Nano (PyTorch) backend — CPU-first, GPU later via device/dtype.
+# Base image ships torch 2.12 + ROCm libs; nano is CPU-friendly so we run on
+# CPU for now (avoids flash_attn/ROCm risk entirely).
+FROM docker.io/rocm/pytorch:rocm7.14.1_ubuntu24.04_py3.12_pytorch_release_2.12.0
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        ffmpeg \
+    && rm -rf /var/lib/apt/lists/*
+
+# MOSS-TTS-Nano uses transformers remote code + a separate audio codec model.
+# Pin transformers to the 4.x line (the model's remote code targets 4.x; 5.x
+# breaks it — _keys_to_ignore_on_load_unexpected is a list in 4.x, a set in 5.x).
+# sentencepiece is required by the text tokenizer.
+RUN pip install --no-cache-dir \
+        "transformers>=4.40,<5" \
+        "sentencepiece" \
+        "soundfile" \
+        "torchaudio" \
+        "fastapi" \
+        "uvicorn[standard]"
+
+# Generic OpenAI TTS backbone + this backend (same pattern as piper/kokoro/etc).
+COPY shared/openai_tts_server.py      /app/openai_tts_server.py
+COPY pod/moss_tts.py               /app/moss_tts.py
+
+ENV HOST=0.0.0.0 \
+    PORT=8097 \
+    MOSS_TTS_MODEL=/models/OpenMOSS-Team/MOSS-TTS-Nano \
+    MOSS_TTS_CODEC=/models/OpenMOSS-Team/MOSS-Audio-Tokenizer-Nano \
+    MOSS_TTS_DEVICE=auto \
+    MOSS_TTS_MODE=continuation
+
+# Default out-of-the-box behavior: serve the OpenAI-compatible API (:8097) so
+# tts-ui can connect unchanged. Weights are bind-mounted at runtime from the host
+# safetensors snapshot:
+#   -m ${MODELS_DIR}/OpenMOSS-Team/MOSS-TTS-Nano
+CMD ["python", "/app/moss_tts.py"]
