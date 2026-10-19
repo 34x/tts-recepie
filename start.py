@@ -54,20 +54,45 @@ def podman(*args, check=True, capture=False):
             sys.exit(0)
 
 
+def load_env_file(path: Path) -> dict[str, str]:
+    """Parse a KEY=VALUE env file (like docker/podman --env-file semantics).
+
+    Skips blank lines and `#` comments, trims whitespace. Missing files
+    yield an empty dict.
+    """
+    values: dict[str, str] = {}
+    if not path.exists():
+        return values
+    with open(path) as f:
+        for line in f:
+            line = line.strip()
+            if not line or line.startswith("#") or "=" not in line:
+                continue
+            key, _, val = line.partition("=")
+            key = key.strip()
+            val = val.strip().strip("'\"")
+            if key:
+                values[key] = val
+    return values
+
+
+def merged_env() -> dict[str, str]:
+    """Merge env files: .env.example defaults, overridden by .env."""
+    env = load_env_file(PROJECT_DIR / ".env.example")
+    env.update(load_env_file(PROJECT_DIR / ".env"))
+    return env
+
+
 def resolve_models_root():
     """Resolve the root directory for all model weights.
     Fallback: .env -> .env.example -> ~/.cache/tts-models
     """
-    # 1. Check .env (loaded into os.environ usually)
+    # 1. Real environment wins
     val = os.environ.get("TTS_MODELS_ROOT")
 
-    # 2. Check .env.example as fallback
-    if not val and Path(".env.example").exists():
-        with open(".env.example") as f:
-            for line in f:
-                if line.startswith("TTS_MODELS_ROOT="):
-                    val = line.split("=", 1)[1].strip()
-                    break
+    # 2. Merged env files (.env takes priority over .env.example)
+    if not val:
+        val = merged_env().get("TTS_MODELS_ROOT")
 
     # 3. Hardcoded default
     if not val:
@@ -132,6 +157,16 @@ def start():
         "-p",
         f"{UI_PORT}:8099",  # UI listens on 8099 inside container
     ]
+
+    # Inject merged env files (.env.example defaults, overridden by .env)
+    # so backends can read operator knobs like SUPERTONIC_STEPS at runtime.
+    env = merged_env()
+    if env:
+        print("Injected environment:")
+        for key in sorted(env):
+            print(f"  -e {key}={env[key]}")
+        for key, val in sorted(env.items()):
+            cmd += ["-e", f"{key}={val}"]
 
     vols = volumes()
     print("Mounted volumes")

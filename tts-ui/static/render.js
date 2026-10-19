@@ -259,7 +259,8 @@ function syncChunkRows(state) {
         const cls = 'chunk-row ' + status;
         if (row.className !== cls) row.className = cls;
 
-        // Meta line: chars · [KB] · ~duration [· gen time] [· status glyph]
+        // Meta line: chars · [KB] · ~duration [· gen time] — the state icon
+        // lives in the dedicated status span, so meta text stays stable.
         const metaEl = row.querySelector('.chunk-meta');
         const chunk = state.chunks[i];
         const audio = chunk.audio;
@@ -267,9 +268,15 @@ function syncChunkRows(state) {
         if (audio) s += ` · ${audio.kb}KB`;
         s += ` · ~${(chunk.chars / SPEECH_RATE).toFixed(1)}s`;
         if (audio && audio.genTime !== null && audio.genTime !== undefined) s += ` · ⏱${audio.genTime.toFixed(1)}s`;
-        const icon = CHUNK_ICONS[status] || '';
-        if (icon) s += ` · ${icon}`;
         if (metaEl && metaEl.textContent !== s) metaEl.textContent = s;
+
+        // Status icon span — always present (reserved width), content swaps
+        // per chunk state. No glyph for 'generating': the CSS spinner rides it.
+        const statusEl = row.querySelector('.chunk-status');
+        if (statusEl) {
+            const icon = CHUNK_ICONS[status] || '';
+            if (statusEl.textContent !== icon) statusEl.textContent = icon;
+        }
     }
 }
 
@@ -286,6 +293,12 @@ function rebuildRows(state) {
         const body = document.createElement('div');
         body.className = 'chunk-body';
 
+        // Status icon column — fixed width, always present so state changes
+        // never shift the text. Content per existing chunk state.
+        const status = document.createElement('span');
+        status.className = 'chunk-status';
+        status.textContent = '○';
+
         const txt = document.createElement('span');
         txt.className = 'chunk-text';
         txt.textContent = chunk.text;
@@ -296,6 +309,7 @@ function rebuildRows(state) {
 
         body.appendChild(txt);
         body.appendChild(meta);
+        row.appendChild(status);
         row.appendChild(body);
         list.appendChild(row);
     }

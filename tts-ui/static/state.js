@@ -21,7 +21,9 @@
 
 export const SPEECH_RATE = 15; // chars/sec for duration estimate
 // Display class per chunk status (CSS keys: pending/generating/ready/active/done/error)
-export const CHUNK_ICONS = { pending: '', generating: '', ready: '', active: '▶', done: '✓', error: '✕' };
+// Rendered in a dedicated fixed-width status span per chunk row — reserved
+// space means the meta text never shifts when a chunk changes state.
+export const CHUNK_ICONS = { pending: '○', generating: '', ready: '⬇', active: '▶', done: '✓', error: '✕' };
 
 // All UI icons in one place — change here to restyle globally
 export const ICONS = {

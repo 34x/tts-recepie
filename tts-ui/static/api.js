@@ -1,5 +1,15 @@
 // ── api.js — network utilities (config, buffered) ───────────────────────
 
+// Chunking sizes served by /config ("chunk" key), falling back to chunker.js
+// defaults when absent (e.g. older server or config fetch failed).
+export const configChunk = { target: null, hard: null };
+export function getChunkSizes(defaults) {
+    return {
+        target: configChunk.target ?? defaults.target,
+        hard: configChunk.hard ?? defaults.hard,
+    };
+}
+
 /**
  * Persist the model/voice selection so it survives reloads.
  * Stored as {backend, model, voice} — the model lives in the option's
@@ -58,6 +68,10 @@ export function fetchConfig(onPopulated) {
         const backends = cfg.backends || [];
         const modelsByBackend = cfg.models || {};
         const voicesByBackend = cfg.voices || {};
+
+        // Capture server-side chunking sizes for chunkedPlayback.
+        if (cfg.chunk && Number.isFinite(cfg.chunk.target)) configChunk.target = cfg.chunk.target;
+        if (cfg.chunk && Number.isFinite(cfg.chunk.hard)) configChunk.hard = cfg.chunk.hard;
 
         // Populate model selector
         const modelSel = document.getElementById('model');

@@ -8,7 +8,7 @@ loaded lazily on the first ``synthesize()`` call so that server startup
 Run:  python3 supertonic_tts.py
 Env:  SUPERTONIC_VOICE        default voice (default M3)
       SUPERTONIC_LANG         default language (default en)
-      SUPERTONIC_STEPS        synthesis diffusion steps (default 50)
+      SUPERTONIC_STEPS        synthesis diffusion steps (default 10)
       SUPERTONIC_SPEED        speech rate multiplier (default 1.0)
 """
 
@@ -62,6 +62,7 @@ class SupertonicSynthesizer(TTSSynthesizer):
         self._ensure_engine()
         engine = self._engine
         style = engine.get_voice_style(voice_name=voice or VOICE)
+        print(f"[supertonic] synthesizing. STEPS={STEPS}", flush=True)
         wav, _ = engine.synthesize(
             text,
             voice_style=style,

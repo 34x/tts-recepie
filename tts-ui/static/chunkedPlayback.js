@@ -10,6 +10,7 @@
 // the whole stream (unlike the multipart path).
 
 import { chunkText } from './chunker.js';
+import { getChunkSizes } from './api.js';
 import { dispatch, getState, downloadedCount } from './state.js';
 import { beginChunked, sendPart, rearmChunked, completeChunked } from './playback.js';
 import { computePin } from './settingsPin.js';
@@ -76,7 +77,10 @@ export function startChunked(opts) {
         getResumeAt,    // () -> first chunk index to fetch/play (client concern)
     } = opts;
 
-    const chunks = chunkText(text);
+    // Chunk sizes come from /config (server env: TTS_STREAM_CHUNK_CHARS /
+    // TTS_CHUNK_HARD), falling back to chunker.js defaults.
+    const sizes = getChunkSizes({ target: 200, hard: 1000 });
+    const chunks = chunkText(text, sizes.target, sizes.hard);
     if (!chunks.length) {
         dispatch({ type: 'STREAM_ERROR', msg: 'Nothing to synthesize.' });
         return;

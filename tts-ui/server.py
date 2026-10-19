@@ -485,7 +485,14 @@ class Handler(BaseHTTPRequestHandler):
                 models = {label: f.result() for label, f in futures.items()}
                 vfutures = {b["label"]: ex.submit(_discover_voices, b) for b in BACKENDS}
                 voices = {label: f.result() for label, f in vfutures.items()}
-            payload = {"backends": BACKENDS, "models": models, "voices": voices}
+            payload = {
+                "backends": BACKENDS,
+                "models": models,
+                "voices": voices,
+                # Client-side chunking sizes (chunker.js defaults, overridable
+                # via TTS_STREAM_CHUNK_CHARS / TTS_CHUNK_HARD env vars).
+                "chunk": {"target": STREAM_CHUNK_CHARS, "hard": CHUNK_HARD},
+            }
             self._send(200, "application/json", json.dumps(payload).encode())
             return
         if self.path == "/api/cache/stats":
