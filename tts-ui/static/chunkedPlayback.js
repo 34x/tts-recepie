@@ -14,6 +14,8 @@ import { getChunkSizes } from './api.js';
 import { dispatch, getState, downloadedCount } from './state.js';
 import { beginChunked, sendPart, rearmChunked, completeChunked } from './playback.js';
 import { computePin } from './settingsPin.js';
+import { recordId, save as cacheSave, get as cacheGet } from './audioCache.js';
+import { library } from './library.js';
 
 const API = '/api/audio/speech';
 const MAX_ATTEMPTS = 3;      // 1 initial + 2 retries
@@ -97,7 +99,8 @@ export function startChunked(opts) {
     dispatch({ type: 'METADATA', chunks, charCounts: null }); // chunk list rows + statuses
     dispatch({ type: 'SET_TOTAL', count: chunks.length });
 
-    _session = { text, voice, model, instruct, backend, chunks, pin };
+    _session = { text, voice, model, instruct, backend, chunks, pin,
+                 entryId: library.idFor(text) };
     _abortPump();                    // cancel any previous session's pump
     const gen = _pumpGen;            // capture this session's generation
     _pump(resume, gen, chunks.length - 1);
@@ -118,6 +121,29 @@ function _pump(start, gen, last) {
     const stale = () => gen !== _pumpGen;
 
     const fetchChunk = async (idx) => {
+        // Single source of truth: this exact object is both hashed into the
+        // cache key and serialized as the request body. Never build either one
+        // from a separate field list — that is how a key silently stops
+        // describing its request.
+        const fetchBody = { input: chunks[idx], voice, model, instruct, backend };
+
+        // Cache lookup: identical bodies map to the same key, so a hit means
+        // byte-for-byte equal audio. Skips the network entirely.
+        // Fault-isolated: any cache error (insecure-context absence, corrupted
+        // store, browser quirk) degrades to the plain fetch path — a cache
+        // failure must never disturb live playback.
+        let key = null, rec = null;
+        try {
+            key = await recordId(fetchBody);
+            rec = await cacheGet(key);
+        } catch (e) {
+            console.warn('[audioCache] lookup failed (falling back to fetch):', e);
+        }
+        if (rec?.audio) {
+            console.log(`[audioCache] HIT chunk=${idx}`);
+            return rec.audio;   // Blob — bypasses CHUNK_FETCHING spinner phase
+        }
+
         dispatch({ type: 'CHUNK_FETCHING', idx }); // row shows a spinner while in flight
         for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
             if (stale()) return null;
@@ -125,10 +151,20 @@ function _pump(start, gen, last) {
                 const resp = await fetch(API, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ input: chunks[idx], voice, model, instruct, backend }),
+                    body: JSON.stringify(fetchBody),
                     signal: ctrl.signal,   // network-level cancel on seek
                 });
-                if (resp.ok) return await resp.blob();
+                if (resp.ok) {
+                    const blob = await resp.blob();
+                    // Persist for future offline replay. Fire-and-forget: a
+                    // cache write failure must not disturb the live session.
+                    if (key) {
+                        cacheSave({ id: key, entryId: _session.entryId, audio: blob,
+                                    savedAt: Date.now() })
+                            .catch(e => console.warn('[audioCache] save failed:', e));
+                    }
+                    return blob;
+                }
                 const code = resp.status;
                 if (attempt < MAX_ATTEMPTS) {
                     dispatch({ type: 'RETRY_SCHEDULED', chunkIdx: idx, code, attempt });

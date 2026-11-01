@@ -6,6 +6,7 @@ import * as playback from './playback.js';
 import { fetchConfig } from './api.js';
 import { startChunked, seekChunked, endChunked, pumpCovers } from './chunkedPlayback.js';
 import { library } from './library.js';
+import { removeByEntry, clear as cacheClear } from './audioCache.js';
 import { cleanText } from './textNormalizer.js';
 import * as theme from './theme.js';
 import { createSettingsStore } from './settings.js';
@@ -186,6 +187,11 @@ document.getElementById('library-back-btn').addEventListener('click', () => {
 document.getElementById('library-list').addEventListener('click', (e) => {
     const del = e.target.closest('[data-action="delete"]');
     if (del) {
+        // Evict the entry's cached audio before/alongside removing the entry
+        // itself. Key for audio is derived from the entry's own text, so we
+        // must grab it before library.remove() forgets it.
+        const entry = library.get(del.dataset.id);
+        if (entry) removeByEntry(entry.id).catch(e => console.warn('audioCache:', e));
         library.remove(del.dataset.id);
         render.renderLibrary(library.list(), document.getElementById('text').value);
         return;
