@@ -95,6 +95,19 @@ subscribe((state, prev) => {
     if (state.error && state.error !== prev.error) showError(state.error);
 });
 
+// ── Connectivity ─────────────────────────────────────────────────────────
+// Going offline is not fatal: chunks already persisted in IndexedDB still
+// play. But nothing can be generated, and the failure otherwise looks like a
+// slow server ("Chunk 2 failed after retries (HTTP 0)"). Announce it through
+// the same toast channel used for stream/cache errors, so there is exactly
+// one place a problem reaches the user.
+function reportOffline() {
+    if (navigator.onLine) return;   // being online needs no announcement
+    dispatch({ type: 'NOTIFY', msg: 'Offline — only audio generated earlier can be played.' });
+}
+window.addEventListener('offline', reportOffline);
+reportOffline();
+
 // ── Settings panel ───────────────────────────────────────────────────────
 
 const settingsPanel = document.getElementById('settings-panel');

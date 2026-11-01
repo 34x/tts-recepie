@@ -298,6 +298,14 @@ export function dispatch(action) {
             break;
         }
 
+        // Generic user-facing notice (connectivity changes, etc.). Same
+        // channel as stream/cache errors so the toast is the single place a
+        // problem reaches the user. No state invariant depends on it.
+        case 'NOTIFY': {
+            state.error = action.msg;
+            break;
+        }
+
         // ── Cosmetic — always valid, no invariants affected ────────────────
 
         case 'STATUS': {

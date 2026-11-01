@@ -11,7 +11,7 @@
 // edit to app.js/playback.js/etc. was invisible until someone remembered to
 // bump the version. Network-first makes deploys take effect immediately;
 // the cache remains only as an offline fallback.
-const CACHE = 'tts-ui-v11';
+const CACHE = 'tts-ui-v12';
 
 // Precache on install — used for offline fallback, NOT authoritative.
 const STATIC_ASSETS = [
@@ -32,7 +32,9 @@ const STATIC_ASSETS = [
     '/playback.js',
     '/chunkedPlayback.js',
     '/chunker.js',
+    '/textNormalizer.js',
     '/library.js',
+    '/audioCache.js',
     '/icons/icon-192.png',
     '/icons/icon-512.png',
     '/silence.mp3'
