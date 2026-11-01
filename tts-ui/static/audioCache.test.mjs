@@ -90,16 +90,21 @@ test('module guards: import is safe, storage calls reject without indexedDB', as
 });
 
 // ── Test 2: recordId is deterministic and distinct per content ───────────────
+// Uses the real request body shape produced by fetchChunk, not a minimal
+// object — key derivation must be exercised with the payload actually sent.
 test('recordId: same body -> same key, different body -> different key', async () => {
     const { recordId } = await import('./audioCache.js');
-    const body = { input: 'hello world', voice: 'alloy', model: 'm', instruct: '' };
-    const a = await recordId(body);
-    const b = await recordId({ input: 'hello world', voice: 'alloy', model: 'm', instruct: '' });
-    const c = await recordId({ input: 'hello worm', voice: 'alloy', model: 'm', instruct: '' });
-    const d = await recordId({ input: 'hello world', voice: 'onyx', model: 'm', instruct: '' });
+    const body = { input: 'hello world', voice: 'alloy', model: 'm', instruct: 'calm', backend: 'piper' };
+    const a = recordId(body);
+    const b = recordId({ input: 'hello world', voice: 'alloy', model: 'm', instruct: 'calm', backend: 'piper' });
+    const c = recordId({ ...body, input: 'hello worm' });
+    const d = recordId({ ...body, voice: 'onyx' });
+    const e = recordId({ ...body, backend: 'kokoro' });
     assert.equal(a, b);
     assert.notEqual(a, c);
     assert.notEqual(a, d);
+    assert.notEqual(a, e);
+    assert.match(a, /^fnv-[0-9a-f]{32}$/, 'key must be plain FNV, not crypto');
 });
 
 // ── Test 2b: key identity == request identity ──────────────────────────────
@@ -108,10 +113,38 @@ test('recordId: same body -> same key, different body -> different key', async (
 test('recordId hashes exactly the serialized fetch body', async () => {
     const { recordId } = await import('./audioCache.js');
     const fetchBody = { input: 'chunk', voice: 'v', model: 'm', instruct: '', backend: 'b' };
-    assert.equal(await recordId(fetchBody), await recordId(JSON.parse(JSON.stringify(fetchBody))));
+    assert.equal(recordId(fetchBody), recordId(JSON.parse(JSON.stringify(fetchBody))));
     // Any added field is part of the key — a new request parameter cannot be
     // sent without changing the key.
-    assert.notEqual(await recordId(fetchBody), await recordId({ ...fetchBody, speed: 1.2 }));
+    assert.notEqual(recordId(fetchBody), recordId({ ...fetchBody, speed: 1.2 }));
+});
+
+// ── Test 2c: hashKey is environment-independent ────────────────────────────
+// The regression this replaces: key derivation once branched on crypto.subtle,
+// which is undefined on plain http:// origins (how the app is actually served
+// on LAN/VPN IPs). The same request then produced different keys per origin and
+// the off-origin branch threw. recordId is now synchronous and depends on no
+// ambient API, so it cannot diverge by environment.
+test('hashKey needs no ambient crypto API and handles non-BMP text', async () => {
+    const { hashKey, recordId } = await import('./audioCache.js');
+
+    assert.equal(typeof crypto.subtle, 'object', 'Node sanity: subtle exists but must be unused');
+
+    assert.equal(hashKey('hello'), hashKey('hello'));
+    assert.notEqual(hashKey('hello'), hashKey('hellp'));
+    assert.match(hashKey('日本語🎉'), /^fnv-[0-9a-f]{32}$/);
+
+    // Same body, derived while subtle is deleted entirely: identical key.
+    const before = recordId({ input: 'chunk', voice: 'v', model: 'm', instruct: '', backend: 'b' });
+    const desc = Object.getOwnPropertyDescriptor(globalThis.crypto, 'subtle');
+    try {
+        Object.defineProperty(globalThis.crypto, 'subtle', { value: undefined, configurable: true });
+        const after = recordId({ input: 'chunk', voice: 'v', model: 'm', instruct: '', backend: 'b' });
+        assert.equal(after, before, 'key must not depend on crypto availability');
+    } finally {
+        if (desc) Object.defineProperty(globalThis.crypto, 'subtle', desc);
+        else delete globalThis.crypto.subtle;
+    }
 });
 
 // ── Test 3: save/get round-trip + overwrite on same key via in-memory shim ──

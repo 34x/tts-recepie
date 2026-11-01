@@ -42,11 +42,18 @@ let _cacheReported = { read: false, write: false }; // once-per-session error la
 function _reportCacheFailure(op, err) {
     if (_cacheReported[op]) return;
     _cacheReported[op] = true;
-    const what = op === 'read' ? 'read from' : 'write to';
-    const detail = err?.name === 'QuotaExceededError' ? ' (storage quota exceeded)' : '';
+    // The error's identity is the whole diagnostic value here: SecurityError
+    // (storage blocked), VersionError (DB at a higher version), NotFoundError
+    // (store missing) and QuotaExceededError (write only) need different fixes
+    // and must never be flattened into one generic sentence.
+    const OP_LABEL = { key: 'key derivation', read: 'read', write: 'write' };
+    const opLabel = OP_LABEL[op] || op;
+    console.error(`[audioCache] ${opLabel} failed:`, err);
+    const name = err?.name || 'Error';
+    const detail = err?.message ? `: ${err.message}` : '';
     dispatch({
         type: 'CACHE_ERROR',
-        msg: `Audio cache: cannot ${what} IndexedDB${detail}. This session works, but audio will not be available offline.`,
+        msg: `Audio cache ${opLabel} failed (${name}${detail}). This session works, but audio will not be available offline.`,
     });
 }
 
@@ -146,21 +153,25 @@ function _pump(start, gen, last) {
         // describing its request.
         const fetchBody = { input: chunks[idx], voice, model, instruct, backend };
 
-        // Cache lookup: identical bodies map to the same key, so a hit means
-        // byte-for-byte equal audio. Skips the network entirely.
-        // Fault-isolated: any cache error (insecure-context absence, corrupted
-        // store, browser quirk) degrades to the plain fetch path — a cache
-        // failure must never disturb live playback.
-        let key = null, rec = null;
+        // Key derivation and storage read are separate operations with
+        // separate failure modes; guarding them together would make a
+        // key-derivation bug report as an IndexedDB bug. Each is guarded at
+        // its own call site. Both degrade to plain fetch: a cache failure
+        // must never disturb live playback.
+        let key = null;
         try {
-            key = await recordId(fetchBody);
-            rec = await cacheGet(key);
+            key = recordId(fetchBody);
         } catch (e) {
-            // A broken cache is invisible in the UI unless it is reported:
-            // every lookup would look like an ordinary miss. Report once per
-            // session (not per chunk) so the toast is not spammed.
-            console.warn('[audioCache] lookup failed (falling back to fetch):', e);
-            _reportCacheFailure('read', e);
+            _reportCacheFailure('key', e);
+        }
+
+        let rec = null;
+        if (key) {
+            try {
+                rec = await cacheGet(key);
+            } catch (e) {
+                _reportCacheFailure('read', e);
+            }
         }
         if (rec?.audio) {
             console.log(`[audioCache] HIT chunk=${idx}`);

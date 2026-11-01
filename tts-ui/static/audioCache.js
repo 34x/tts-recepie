@@ -77,19 +77,25 @@ function _tx(db, mode, fn) {
 
 // ── Public API ──────────────────────────────────────────────────────────────
 
-// crypto.subtle exists only in secure contexts (https / localhost). On plain
-// http:// (typical LAN access) it is undefined — so recordId falls back to a
-// deterministic hash that never throws. Keys are internal and never compared
-// across schemes, so a scheme-dependent algorithm is fine.
-function hasSubtle() {
-    return typeof crypto !== 'undefined' && !!crypto.subtle;
-}
-
-/** FNV-1a over two independent 64-bit lanes (hex, 16 chars). Pure JS fallback. */
-export function _fallbackHash(data) {
+/**
+ * FNV-1a over two independent 64-bit lanes (hex, 16 chars each).
+ *
+ * This is the ONLY key derivation. crypto.subtle is deliberately not used: it
+ * exists only in secure contexts (https / localhost) and is undefined on plain
+ * http:// origins, which is how this app is actually served (0.0.0.0, LAN/VPN
+ * IPs). A context-dependent algorithm would produce different keys for the
+ * same request on different origins — the same audio cached on a desktop would
+ * be unreachable from a phone. Cache keys need determinism, not cryptographic
+ * strength; a collision only misplays audio for the one who caused it.
+ */
+export function hashKey(data) {
     let a = 0x811c9dc5n, b = 0xdeadbeefn;
-    for (let i = 0; i < data.length; i++) {
-        const c = BigInt(data[i]);
+    // Iterate CODE POINTS, not UTF-16 units: `for...of` over a string yields
+    // one entry per code point, so astral characters hash as one value instead
+    // of two surrogate halves. Never index the string directly — data[i] is a
+    // character, and BigInt(character) throws.
+    for (const ch of data) {
+        const c = BigInt(ch.codePointAt(0));
         a = BigInt.asUintN(64, (a ^ c) * 0x100000001b3n);
         b = BigInt.asUintN(64, (b ^ c) * 0x1ff1ab0e7c701n);
     }
@@ -104,14 +110,12 @@ export function _fallbackHash(data) {
  * fetch(). The key is a hash of its serialization, so key identity is request
  * identity by construction: there is no second field list to keep in sync.
  * Callers must not build a key from anything other than the body they send.
+ *
+ * Synchronous and environment-independent by design: same body, same key, on
+ * every device and every origin.
  */
-export async function recordId(fetchBody) {
-    const data = JSON.stringify(fetchBody);
-    if (hasSubtle()) {
-        const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(data));
-        return [...new Uint8Array(buf)].map(b => b.toString(16).padStart(2, '0')).join('');
-    }
-    return _fallbackHash(data);
+export function recordId(fetchBody) {
+    return hashKey(JSON.stringify(fetchBody));
 }
 
 /** Insert or overwrite a record. Resolves after commit. */
