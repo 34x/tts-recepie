@@ -77,7 +77,7 @@ export function startChunked(opts) {
         getResumeAt,    // () -> first chunk index to fetch/play (client concern)
     } = opts;
 
-    // Chunk sizes come from /config (server env: TTS_STREAM_CHUNK_CHARS /
+    // Chunk sizes come from /config (server env: TTS_CHUNK_CHARS /
     // TTS_CHUNK_HARD), falling back to chunker.js defaults.
     const sizes = getChunkSizes({ target: 200, hard: 1000 });
     const chunks = chunkText(text, sizes.target, sizes.hard);

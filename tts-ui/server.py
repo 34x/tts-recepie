@@ -13,8 +13,8 @@ Env:
                        Each: {"label": str, "url": str}  (url = /v1/audio/speech endpoint)
                        Optional "voices": [str] per backend (unused for routing today).
     TTS_API_KEY        Optional Bearer key, forwarded to the engine
-    TTS_CHUNK_CHARS    Target chunk size in chars (default: 500)
-    TTS_CHUNK_HARD     Hard cap for pathological long sentences (default: 1000)
+    TTS_CHUNK_CHARS    Target chunk size in chars (value is in .env)
+    TTS_CHUNK_HARD     Hard cap for pathological long sentences (value is in .env)
     TTS_CHUNK_LOOKAHEAD  Chunks synthesized ahead of streaming (default: 1)
     PORT               Listen port (default: 8095)
     UI_TTS_CACHE_MAX_ENTRIES  in-process LRU cache size for encoded chunk
@@ -53,10 +53,9 @@ PORT = int(os.environ.get("PORT", "8095"))
 TTS_PROXY_TIMEOUT = int(os.environ.get("TTS_PROXY_TIMEOUT", "120"))
 STATIC_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "static")
 
-CHUNK_CHARS = int(os.environ.get("TTS_CHUNK_CHARS", "500"))
 CHUNK_HARD = int(os.environ.get("TTS_CHUNK_HARD", "1000"))
 CHUNK_LOOKAHEAD = int(os.environ.get("TTS_CHUNK_LOOKAHEAD", "1"))
-STREAM_CHUNK_CHARS = int(os.environ.get("TTS_STREAM_CHUNK_CHARS", "200"))
+CHUNK_CHARS = int(os.environ.get("TTS_CHUNK_CHARS", "200"))
 # Long random-looking default so raw MP3 payload bytes cannot coincidentally
 # form the boundary string (mp3 frames start with 0xFFFB — short boundaries risk false matches).
 STREAM_BOUNDARY = os.environ.get("TTS_STREAM_BOUNDARY", "tts-chunk-a1b2c3d4e5f6")
@@ -490,8 +489,8 @@ class Handler(BaseHTTPRequestHandler):
                 "models": models,
                 "voices": voices,
                 # Client-side chunking sizes (chunker.js defaults, overridable
-                # via TTS_STREAM_CHUNK_CHARS / TTS_CHUNK_HARD env vars).
-                "chunk": {"target": STREAM_CHUNK_CHARS, "hard": CHUNK_HARD},
+                # via TTS_CHUNK_CHARS / TTS_CHUNK_HARD env vars).
+                "chunk": {"target": CHUNK_CHARS, "hard": CHUNK_HARD},
             }
             self._send(200, "application/json", json.dumps(payload).encode())
             return
@@ -542,7 +541,7 @@ class Handler(BaseHTTPRequestHandler):
     def _resolution(self, body: dict) -> tuple[list, str, dict]:
         """Return (chunks, text, backend) shared by both endpoints, resolving
         the backend + optional instruction."""
-        chunks = chunk_text(str(body.get("input", ""))[:MAX_INPUT_CHARS], STREAM_CHUNK_CHARS)
+        chunks = chunk_text(str(body.get("input", ""))[:MAX_INPUT_CHARS], CHUNK_CHARS)
         text = "".join(chunks)
         url, backend = self._resolve_backend(body)
         payload = self._payload_for(backend, text, body)

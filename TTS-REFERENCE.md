@@ -48,10 +48,9 @@ never touches the code.
 | `TTS_MODELS` | derived from `TTS_URL` | Engine's `/v1/models` URL for voice list |
 | `TTS_VOICES` | empty | **Deprecated.** Legacy comma-separated voice list. Superseded by per-backend discovery (see below); only used by `dev-run.sh` for Piper. |
 | `TTS_API_KEY` | empty | Optional Bearer key, forwarded to engine |
-| `TTS_CHUNK_CHARS` | 500 | Target chunk size in chars |
 | `TTS_CHUNK_HARD` | 1000 | Hard cap for pathological long sentences |
 | `TTS_CHUNK_LOOKAHEAD` | 1 | Chunks synthesized ahead of streaming |
-| `TTS_STREAM_CHUNK_CHARS` | 300 | Chunk size for the multipart streaming endpoint |
+| `TTS_CHUNK_CHARS` | 300 | Chunk size for the multipart streaming endpoint |
 | `TTS_PROXY_TIMEOUT` | 120 | Upstream engine request timeout (s). **Raise for slow multi-chunk engines** (qwen uses 300-360) |
 | `TTS_MAX_INPUT_CHARS` | 100000 | Hard input cap; truncation reported via `X-Input-Truncated` header |
 | `PORT` | 8095 | Listen port |

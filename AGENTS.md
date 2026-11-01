@@ -93,3 +93,4 @@ Two deployment modes:
 - Long-form content is chunked + streamed; a 100k-char cap applies.
 - Unified container: `unified/Containerfile` + `unified/pyproject.toml`.
 - Pod: one `pod/Containerfile.*` per backend plus `tts-ui/Containerfile`.
+- Env vars use a `TTS_` prefix; the internal Python constant drops it (`TTS_CHUNK_HARD` → `CHUNK_HARD`).
