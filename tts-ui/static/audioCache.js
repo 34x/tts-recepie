@@ -7,9 +7,12 @@
 // from chunkedPlayback.js) so deleting a library entry can evict all its
 // chunks in one index query.
 //
-// Non-browser safe: module import in a test environment does not throw —
-// indexdb calls are lazy-guarded on `indexedDB`, mirroring library.js's
-// approach for localStorage.
+// Non-browser safe for *import*: the module loads in a test/Node environment
+// without throwing, because every entry point is guarded on `indexedDB`.
+// Calls made where IndexedDB is absent REJECT rather than resolving to a
+// neutral value — a silent null/0 would be indistinguishable from "no cached
+// audio" and would hide a broken cache from the UI. Callers may catch and
+// degrade to their non-cache path, but they must report the degradation.
 
 const DB_NAME = 'tts-ui-audio';
 const DB_VERSION = 1;
@@ -20,6 +23,17 @@ let _dbp = null;   // memoized open-promise (single connection per page)
 
 function hasIDB() {
     return typeof indexedDB !== 'undefined';
+}
+
+/**
+ * Storage is unavailable. This is a hard failure, not "no cached audio":
+ * silently resolving to null/0 would make every lookup look like a miss and
+ * every delete look like success. Callers surface it; they may still degrade
+ * to their non-cache path.
+ */
+function _unavailable() {
+    return Promise.reject(new Error(
+        'IndexedDB unavailable (private browsing, disabled site storage, or non-persistent context)'));
 }
 
 /** Open (and, on first call, create) the database. Cache a single promise. */
@@ -105,16 +119,16 @@ export function save(record) {
     return _open().then(db => _tx(db, 'readwrite', os => os.put(record)));
 }
 
-/** Fetch one record by its key, or null when absent. */
+/** Fetch one record by its key, or null when genuinely absent. */
 export function get(id) {
-    if (!hasIDB()) return Promise.resolve(null);
+    if (!hasIDB()) return _unavailable();
     return _open().then(db => _tx(db, 'readonly', os => os.get(id)))
         .then(r => r ?? null);
 }
 
 /** Delete every record tagged with this library entry id. */
 export function removeByEntry(entryId) {
-    if (!hasIDB()) return Promise.resolve(0);
+    if (!hasIDB()) return _unavailable();
     return _open().then(db => new Promise((resolve, reject) => {
         const tx = db.transaction(STORE, 'readwrite');
         const idx = tx.objectStore(STORE).index(ENTRY_INDEX);
@@ -131,12 +145,12 @@ export function removeByEntry(entryId) {
 
 /** Empty the whole audio cache. */
 export function clear() {
-    if (!hasIDB()) return Promise.resolve();
+    if (!hasIDB()) return _unavailable();
     return _open().then(db => _tx(db, 'readwrite', os => os.clear()));
 }
 
 /** Number of records currently stored (diagnostic). */
 export function count() {
-    if (!hasIDB()) return Promise.resolve(0);
+    if (!hasIDB()) return _unavailable();
     return _open().then(db => _tx(db, 'readonly', os => os.count()));
 }

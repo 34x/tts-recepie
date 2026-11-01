@@ -6,7 +6,7 @@ import * as playback from './playback.js';
 import { fetchConfig } from './api.js';
 import { startChunked, seekChunked, endChunked, pumpCovers } from './chunkedPlayback.js';
 import { library } from './library.js';
-import { removeByEntry, clear as cacheClear } from './audioCache.js';
+import { removeByEntry } from './audioCache.js';
 import { cleanText } from './textNormalizer.js';
 import * as theme from './theme.js';
 import { createSettingsStore } from './settings.js';
@@ -86,6 +86,14 @@ function showError(msg) {
         dispatch({ type: 'CLEAR_ERROR' });
     }, 5000);
 }
+
+// Render every state.error the reducer sets. Before this, the reducer was the
+// only consumer of `error` and nothing displayed it: chunk failures, empty
+// streams and cache breakage were all invisible. `prev.error` is captured so
+// the same message is not re-toasted on unrelated dispatches.
+subscribe((state, prev) => {
+    if (state.error && state.error !== prev.error) showError(state.error);
+});
 
 // ── Settings panel ───────────────────────────────────────────────────────
 
@@ -191,7 +199,15 @@ document.getElementById('library-list').addEventListener('click', (e) => {
         // itself. Key for audio is derived from the entry's own text, so we
         // must grab it before library.remove() forgets it.
         const entry = library.get(del.dataset.id);
-        if (entry) removeByEntry(entry.id).catch(e => console.warn('audioCache:', e));
+        if (entry) {
+            // A failed eviction leaves unreachable records on disk. Not fatal,
+            // but the user should not be told the data is gone when it is not.
+            removeByEntry(entry.id).catch(e => {
+                console.warn('audioCache: eviction failed', e);
+                dispatch({ type: 'CACHE_ERROR',
+                    msg: 'Audio cache: could not remove cached audio for this entry.' });
+            });
+        }
         library.remove(del.dataset.id);
         render.renderLibrary(library.list(), document.getElementById('text').value);
         return;

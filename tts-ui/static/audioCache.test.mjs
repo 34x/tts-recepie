@@ -77,13 +77,16 @@ function makeFakeIDB() {
     return { open, _stores: stores };
 }
 
-// ── Test 1: module imports and calls degrade gracefully without indexedDB ──
-test('module guards: calls resolve to sane fallbacks with no indexedDB', async () => {
+// ── Test 1: module imports safely, but storage calls REJECT without indexedDB ──
+// Importing must not throw (Node/CI friendliness). Calling must NOT resolve to a
+// neutral value: a silent null/0 is indistinguishable from "no cached audio" and
+// would hide a completely broken cache from the UI.
+test('module guards: import is safe, storage calls reject without indexedDB', async () => {
     const { get, count, clear, removeByEntry } = await import('./audioCache.js');
-    assert.equal(await get('whatever'), null);
-    assert.equal(await count(), 0);
-    await clear();                     // must resolve, not throw
-    assert.equal(await removeByEntry('anyid'), 0);
+    await assert.rejects(() => get('whatever'), /IndexedDB unavailable/);
+    await assert.rejects(() => count(), /IndexedDB unavailable/);
+    await assert.rejects(() => clear(), /IndexedDB unavailable/);
+    await assert.rejects(() => removeByEntry('anyid'), /IndexedDB unavailable/);
 });
 
 // ── Test 2: recordId is deterministic and distinct per content ───────────────

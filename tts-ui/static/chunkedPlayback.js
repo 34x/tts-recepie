@@ -31,6 +31,24 @@ let _session = null;   // { text, voice, model, instruct, backend, chunks, pin }
 let _pumpCtrl = null;  // AbortController for the current pump's in-flight fetches
 let _pumpGen = 0;      // generation — stale pumps observe this and exit
 let _pumpStart = -1;   // first index the LIVE pump is filling from (-1 = none)
+let _cacheReported = { read: false, write: false }; // once-per-session error latch
+
+/**
+ * Surface a broken audio cache to the UI, at most once per operation per
+ * session. A cache failure never blocks playback (callers degrade to plain
+ * fetch), but it MUST be visible: otherwise "chunk downloaded" silently means
+ * "not persisted", and the user only discovers it when offline replay fails.
+ */
+function _reportCacheFailure(op, err) {
+    if (_cacheReported[op]) return;
+    _cacheReported[op] = true;
+    const what = op === 'read' ? 'read from' : 'write to';
+    const detail = err?.name === 'QuotaExceededError' ? ' (storage quota exceeded)' : '';
+    dispatch({
+        type: 'CACHE_ERROR',
+        msg: `Audio cache: cannot ${what} IndexedDB${detail}. This session works, but audio will not be available offline.`,
+    });
+}
 
 /**
  * True when the live pump is filling the forward range that contains `idx`.
@@ -101,6 +119,7 @@ export function startChunked(opts) {
 
     _session = { text, voice, model, instruct, backend, chunks, pin,
                  entryId: library.idFor(text) };
+    _cacheReported = { read: false, write: false };  // fresh latch per session
     _abortPump();                    // cancel any previous session's pump
     const gen = _pumpGen;            // capture this session's generation
     _pump(resume, gen, chunks.length - 1);
@@ -137,7 +156,11 @@ function _pump(start, gen, last) {
             key = await recordId(fetchBody);
             rec = await cacheGet(key);
         } catch (e) {
+            // A broken cache is invisible in the UI unless it is reported:
+            // every lookup would look like an ordinary miss. Report once per
+            // session (not per chunk) so the toast is not spammed.
             console.warn('[audioCache] lookup failed (falling back to fetch):', e);
+            _reportCacheFailure('read', e);
         }
         if (rec?.audio) {
             console.log(`[audioCache] HIT chunk=${idx}`);
@@ -161,7 +184,14 @@ function _pump(start, gen, last) {
                     if (key) {
                         cacheSave({ id: key, entryId: _session.entryId, audio: blob,
                                     savedAt: Date.now() })
-                            .catch(e => console.warn('[audioCache] save failed:', e));
+                            .catch(e => {
+                                // Playback proceeds either way, but the user
+                                // must know the chunk will NOT be replayable
+                                // offline — otherwise "generated" silently
+                                // means "not persisted".
+                                console.warn('[audioCache] save failed:', e);
+                                _reportCacheFailure('write', e);
+                            });
                     }
                     return blob;
                 }

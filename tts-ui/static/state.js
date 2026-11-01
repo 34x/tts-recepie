@@ -289,6 +289,15 @@ export function dispatch(action) {
             break;
         }
 
+        // The audio cache is broken (IndexedDB unavailable, store corrupt,
+        // quota exceeded). Distinct from a stream error: playback may be
+        // working perfectly right now, but nothing is being persisted, so
+        // offline replay will silently not exist. Must be user-visible.
+        case 'CACHE_ERROR': {
+            state.error = action.msg;
+            break;
+        }
+
         // ── Cosmetic — always valid, no invariants affected ────────────────
 
         case 'STATUS': {
@@ -305,6 +314,7 @@ export function dispatch(action) {
             state.error = null;
             break;
         }
+
     }
 
     notify(prev);
