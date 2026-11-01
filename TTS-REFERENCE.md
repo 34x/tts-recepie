@@ -50,7 +50,7 @@ never touches the code.
 | `TTS_API_KEY` | empty | Optional Bearer key, forwarded to engine |
 | `TTS_CHUNK_HARD` | 1000 | Hard cap for pathological long sentences |
 | `TTS_CHUNK_LOOKAHEAD` | 1 | Chunks synthesized ahead of streaming |
-| `TTS_CHUNK_CHARS` | 300 | Chunk size for the multipart streaming endpoint |
+| `TTS_CHUNK_CHARS` | 300 | Chunk size for TTS generation |
 | `TTS_PROXY_TIMEOUT` | 120 | Upstream engine request timeout (s). **Raise for slow multi-chunk engines** (qwen uses 300-360) |
 | `TTS_MAX_INPUT_CHARS` | 100000 | Hard input cap; truncation reported via `X-Input-Truncated` header |
 | `PORT` | 8095 | Listen port |
@@ -58,8 +58,9 @@ never touches the code.
 ### Endpoints
 - `GET /` or `/index.html` — the UI
 - `GET /config` — `{tts_url, models[], voices[]}` (proxies `TTS_MODELS` + per-backend voice discovery)
-- `POST /api/tts` — chunked single-mp3 stream (concatenates chunks, gapless)
-- `POST /api/speech/multipart` — W3C-style multipart/x-mixed-replace stream (each sentence its own part)
+- `POST /api/audio/speech` — **active**: single request → mp3 response. Used by `chunkedPlayback.js`.
+- `POST /api/tts` — returns 404 (legacy path, no longer routed)
+- `POST /api/speech/multipart` — **deprecated**, server-side only. No client consumer; do not extend or debug.
 
 ### Voice discovery (project contract — NOT an OpenAI endpoint)
 
@@ -92,9 +93,10 @@ pod config or UI env.
 - **Client disconnect detection** is via write errors (BrokenPipeError /
   ConnectionResetError), NOT socket polling — polling `recv()` misreads a
   half-close (FIN) as a disconnect and aborts the stream on mobile Safari/Brave.
-- The multipart endpoint uses `application/octet-stream` (NOT
-  `multipart/x-mixed-replace`) because Safari treats that as a document stream
-  and fails the fetch. The client parses the boundary from the body's first line.
+- The (deprecated) multipart endpoint used `application/octet-stream` with a
+  custom boundary header rather than `multipart/x-mixed-replace`, because Safari
+  treats the latter as a document stream and fails the fetch. Not applicable to
+  the active `/api/audio/speech` path.
 - **Chunked-encoding terminator must be written raw** (`b"0\r\n\r\n"`), not
   wrapped in a chunk frame — otherwise the response never terminates and the
   browser's fetch stream never closes.

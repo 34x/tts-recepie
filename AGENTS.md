@@ -43,17 +43,11 @@ Two deployment modes:
    model/voice, taps Speak.
 
 2. **UI proxy** (`tts-ui/server.py`, Python). Serves static files,
-   `/config` (backend + model discovery), and two TTS endpoints:
-   - `/api/tts` — buffered: returns one concatenated mp3.
-   - `/api/speech/multipart` (multipart/x-mixed-replace style) — streams
-     per-chunk mp3 parts so playback starts after the first sentence.
-
-   It takes JSON `{"input": text, voice, model, instruct}`, **chunks** the text
-   (sentence-ish, `CHUNK_CHARS`/`CHUNK_HARD`), calls the selected backend's
-   `/v1/audio/speech` per chunk with a small lookahead, and concatenates
-   chunks onto the client response. In-memory LRU audio cache keyed by
-   (model, text, voice, instruct, format). Hard input cap
-   `MAX_INPUT_CHARS=100000` (truncation surfaced via `X-Input-Truncated`).
+   `/config` (backend + model discovery), and TTS endpoint(s):
+   - `/api/audio/speech` — **active**: single request → one mp3 response.
+     This is the only endpoint used by the current client (`chunkedPlayback.js`).
+   - `/api/speech/multipart` — **deprecated, server-side only**. No client consumer;
+     lives in `server.py` but no JS file calls it. Do not extend or debug this path.
 
 3. **Backend engines** (one Python file per engine, e.g. `piper_tts.py`,
    `supertonic_tts.py`, `kokoro_tts.py`, …). Each exposes an
@@ -83,12 +77,13 @@ Two deployment modes:
 | `/v1/audio/speech` | every backend | `{input, voice, model, instruct?, response_format}` | mp3/wav audio |
 | `/v1/models`, `/v1/audio/voices` | backends (some) | — | JSON lists |
 | `/config` | UI proxy | — | `{backends, models, voices}` |
-| `/api/tts` | UI proxy | JSON `{input, voice, model, instruct}` | mp3 |
-| `/api/speech/multipart` | UI proxy | same JSON | multipart per-chunk audio |
+| `/api/audio/speech` | UI proxy (active) | JSON `{input, voice, model, instruct}` | mp3 |
+| `/api/speech/multipart` | UI proxy (deprecated) | same JSON | multipart per-chunk audio. **No client consumer — do not use.** |
 
 ## Notes / constraints
-- UI proxy is JSON-only POST; **no multipart upload support** on the server
-  today (only a multipart *response* parser exists on the client).
+- UI proxy is JSON-only POST; **no multipart upload support** on the server.
+  No client-side multipart response parser exists either — `/api/speech/multipart`
+  has no consumer and should not be extended.
 - `shared/text_cleaner.py` is per-engine (Piper) — not used by the UI proxy.
 - Long-form content is chunked + streamed; a 100k-char cap applies.
 - Unified container: `unified/Containerfile` + `unified/pyproject.toml`.

@@ -70,7 +70,7 @@ The project is designed as a modular pipeline:
 ### Request Lifecycle
 1. **Chunking**: Long text is split on sentence boundaries (~500 chars).
 2. **Synthesis**: Each chunk is sent to the backend as an OpenAI-style JSON request.
-3. **Streaming**: The proxy uses `multipart/x-mixed-replace` to stream mp3 chunks to the browser in real-time.
+3. **Streaming**: The proxy uses `/api/audio/speech` to deliver a single chunked mp3 response per request; the client splits long text into segments and fires one request per segment for perceived streaming.
 4. **Caching**: Identical text/voice requests are served instantly from an in-memory LRU cache.
 
 ---
