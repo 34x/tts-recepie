@@ -73,15 +73,20 @@ self.addEventListener('fetch', (e) => {
     if (url.origin !== location.origin) return;
 
     if (isAppCode(url)) {
-        // Network-first: always try the server, fall back to cache offline.
+        // Stale-while-revalidate: serve cache instantly (offline never waits
+        // on a network attempt — iOS fails slowly when the iface is up but
+        // the server is unreachable), refresh cache in background when online.
         e.respondWith(
-            fetch(e.request).then((resp) => {
-                if (resp.ok) {
-                    const clone = resp.clone();
-                    caches.open(CACHE).then((cache) => cache.put(e.request, clone));
-                }
-                return resp;
-            }).catch(() => caches.match(e.request))
+            caches.match(e.request).then((cached) => {
+                const net = fetch(e.request).then((resp) => {
+                    if (resp.ok) {
+                        const clone = resp.clone();
+                        caches.open(CACHE).then((cache) => cache.put(e.request, clone));
+                    }
+                    return resp;
+                }).catch(() => cached);
+                return cached || net;
+            })
         );
         return;
     }

@@ -782,6 +782,21 @@ class Handler(BaseHTTPRequestHandler):
 
 
 if __name__ == "__main__":
+    # Optional TLS: if TTS_UI_CERT and TTS_UI_KEY are set and readable, serve
+    # over HTTPS (enables service worker / PWA install on non-localhost hosts).
+    # Otherwise fall back to plain HTTP (pod mode / default unified mode).
+    httpd = ThreadingHTTPServer(("0.0.0.0", PORT), Handler)
+    cert_path = os.environ.get("TTS_UI_CERT", "")
+    key_path = os.environ.get("TTS_UI_KEY", "")
+    if cert_path and key_path:
+        try:
+            import ssl
+            ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+            ctx.load_cert_chain(cert_path, key_path)
+            httpd.socket = ctx.wrap_socket(httpd.socket, server_side=True)
+            print(f"tts-ui: TLS enabled ({cert_path})", flush=True)
+        except Exception as e:
+            print(f"tts-ui: WARNING: TLS unavailable ({e}) — serving plain HTTP", flush=True)
     print(f"tts-ui: backends={[b['label'] for b in BACKENDS]} default={BACKENDS[0]['label'] if BACKENDS else ''} "
           f"chunks={CHUNK_CHARS} lookahead={CHUNK_LOOKAHEAD} listening on :{PORT}", flush=True)
-    ThreadingHTTPServer(("0.0.0.0", PORT), Handler).serve_forever()
+    httpd.serve_forever()

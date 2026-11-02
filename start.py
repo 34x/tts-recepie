@@ -178,7 +178,16 @@ def start():
     print(f"Starting {CONTAINER_NAME} (UI at http://localhost:{UI_PORT}) ...")
     subprocess.run(cmd)
 
-    print(f"\n✅ UI: http://localhost:{UI_PORT}")
+    # HTTPS is preferred (enables SW/PWA offline install on non-localhost
+    # hosts). It's active when the entrypoint-generated cert exists on the
+    # persistent models volume (shared /root/.cache mount).
+    https_on = (MODELS_ROOT / "certs" / "tts-ui.crt").is_file()
+    if https_on:
+        print(f"\n✅ UI (HTTPS, preferred — enables offline PWA): https://localhost:{UI_PORT}")
+        print(f"ℹ️  UI (HTTP fallback):                        http://localhost:{UI_PORT}")
+        print(f"   First visit on a phone: accept the self-signed-certificate warning once.")
+    else:
+        print(f"\n✅ UI: http://localhost:{UI_PORT}")
     print(f"🚀 First run? Models are downloading in the background.")
     print(f"👉 Run `python3 start.py logs` to watch the progress.")
 
@@ -240,10 +249,22 @@ def test():
     print("Waiting for services to come up ...")
     time.sleep(10)
 
+    import ssl
     import urllib.request
 
+    # Probe the UI on its actual scheme: HTTPS when the entrypoint-generated
+    # cert is present on the persistent volume, otherwise plain HTTP.
+    # Self-signed → unverified context for the probes.
+    https_on = (MODELS_ROOT / "certs" / "tts-ui.crt").is_file()
+    scheme = "https" if https_on else "http"
+    if https_on:
+        opener = urllib.request.build_opener(
+            urllib.request.HTTPSHandler(context=ssl._create_unverified_context())
+        )
+        urllib.request.install_opener(opener)
+
     # Check /config — verify both backends, models, and voices
-    url = f"http://127.0.0.1:{UI_PORT}/config"
+    url = f"{scheme}://127.0.0.1:{UI_PORT}/config"
     try:
         with urllib.request.urlopen(url, timeout=5) as r:
             cfg = json.loads(r.read())
@@ -265,7 +286,7 @@ def test():
         {"input": "Hello world", "backend": "piper", "voice": "en_US-lessac-medium"}
     ).encode()
     req = urllib.request.Request(
-        f"http://127.0.0.1:{UI_PORT}/api/audio/speech",
+        f"{scheme}://127.0.0.1:{UI_PORT}/api/audio/speech",
         data=data,
         headers={"Content-Type": "application/json"},
     )
@@ -282,7 +303,7 @@ def test():
         {"input": "Hello world", "backend": "supertonic", "voice": "M3"}
     ).encode()
     req = urllib.request.Request(
-        f"http://127.0.0.1:{UI_PORT}/api/audio/speech",
+        f"{scheme}://127.0.0.1:{UI_PORT}/api/audio/speech",
         data=data,
         headers={"Content-Type": "application/json"},
     )

@@ -45,6 +45,11 @@ COPY unified/supervisord.conf /etc/supervisord.conf
 # --- Environment ---
 # UI server config
 ENV PORT="8099"
+# Optional TLS for the UI. Cert/key are generated at container entrypoint
+# (self-signed, CN=tts-ui) under the persistent /root/.cache mount so the
+# same cert survives restarts. If missing/unreadable → plain HTTP fallback.
+ENV TTS_UI_CERT="/root/.cache/certs/tts-ui.crt"
+ENV TTS_UI_KEY="/root/.cache/certs/tts-ui.key"
 ENV TTS_BACKENDS='[{"label":"piper","url":"http://127.0.0.1:8095/v1/audio/speech"},{"label":"supertonic","url":"http://127.0.0.1:8096/v1/audio/speech"}]'
 
 EXPOSE 8095 8096 8099
